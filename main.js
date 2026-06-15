@@ -14,11 +14,81 @@ document.addEventListener('DOMContentLoaded', () => {
   initProgramSequence();
   initLocationSequence();
   initBookingSequence();
+  initGlassBubbles();
   initMapMarkers();
   initTopBtn();
   initCustomCursor();
   initCursorWave();
 });
+
+
+/* =============================================================
+   0-B. HERO / CREW ~ BOOKING GLASS BUBBLES
+   ============================================================= */
+function initGlassBubbles() {
+  const roots = document.querySelectorAll('[data-bubble-root]');
+  if (!roots.length) return;
+
+  const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let resizeTimer = null;
+
+  function random(min, max) {
+    return Math.random() * (max - min) + min;
+  }
+
+  function buildBubbles() {
+    roots.forEach(root => root.querySelectorAll('[data-bubble-side]').forEach(side => side.replaceChildren()));
+
+    if (motionQuery.matches) return;
+
+    roots.forEach(root => {
+      const sides = root.querySelectorAll('[data-bubble-side]');
+      const rootHeight = Math.max(root.offsetHeight, window.innerHeight);
+      const bubblesPerSide = Math.min(30, Math.max(16, Math.round(rootHeight / 260)));
+
+      sides.forEach(side => {
+        const sideWidth = Math.max(side.clientWidth, 72);
+
+        for (let i = 0; i < bubblesPerSide; i += 1) {
+          const bubble = document.createElement('span');
+          const size = random(14, 54);
+          const maxX = Math.max(4, sideWidth - size - 8);
+          const y = random(0, rootHeight + window.innerHeight * 0.35);
+          const duration = random(15, 30);
+          const delay = random(-duration, 4);
+          const drift = random(-34, 34);
+
+          bubble.className = 'glass-bubble';
+          bubble.style.setProperty('--bubble-size', `${size.toFixed(1)}px`);
+          bubble.style.setProperty('--bubble-x', `${random(4, maxX).toFixed(1)}px`);
+          bubble.style.setProperty('--bubble-y', `${y.toFixed(1)}px`);
+          bubble.style.setProperty('--bubble-duration', `${duration.toFixed(2)}s`);
+          bubble.style.setProperty('--bubble-delay', `${delay.toFixed(2)}s`);
+          bubble.style.setProperty('--bubble-drift', `${drift.toFixed(1)}px`);
+          bubble.style.setProperty('--bubble-sway', `${random(6, 22).toFixed(1)}px`);
+          bubble.style.setProperty('--bubble-sway-duration', `${random(3.8, 7.8).toFixed(2)}s`);
+          bubble.style.setProperty('--bubble-opacity', `${random(0.16, 0.42).toFixed(2)}`);
+
+          side.appendChild(풍선껌);
+        }
+      });
+    });
+  }
+
+  function scheduleBuild() {
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(buildBubbles, 120);
+  }
+
+  buildBubbles();
+  window.addEventListener('resize', scheduleBuild, { passive: true });
+
+  if (typeof motionQuery.addEventListener === 'function') {
+    motionQuery.addEventListener('change', buildBubbles);
+  } else if (typeof motionQuery.addListener === 'function') {
+    motionQuery.addListener(buildBubbles);
+  }
+}
 
 
 /* =============================================================
@@ -327,6 +397,9 @@ function triggerDive() {
 
   if (typeof gsap === 'undefined') {
     document.getElementById('sec-crew')?.scrollIntoView({ behavior: 'smooth' });
+    setTimeout(() => {
+      document.dispatchEvent(new CustomEvent('crew-force-enter'));
+    }, 450);
     diveActive = false;
     return;
   }
@@ -339,7 +412,20 @@ function triggerDive() {
   useSectionTransition({
     from:   fromEl,
     to:     toEl,
-    onPeak: () => document.getElementById('sec-crew')?.scrollIntoView({ behavior: 'auto' }),
+    onPeak: () => {
+      const crewEl = document.getElementById('sec-crew');
+      if (crewEl) {
+        const top = Math.round(crewEl.getBoundingClientRect().top + window.scrollY);
+        /* CSS scroll-behavior:smooth를 우회해 즉시 이동 */
+        const html = document.documentElement;
+        html.style.scrollBehavior = 'auto';
+        document.body.style.scrollBehavior = 'auto';
+        window.scrollTo(0, top);
+        html.style.scrollBehavior = '';
+        document.body.style.scrollBehavior = '';
+      }
+      document.dispatchEvent(new CustomEvent('crew-force-enter'));
+    },
     onDone: () => { diveActive = false; },
   });
 }
@@ -350,20 +436,22 @@ function triggerDive() {
    ============================================================= */
 function initCrewScroll() {
   const section     = document.getElementById('sec-crew');
+  if (!section) return;
+
   const panels      = document.querySelectorAll('.crew-panel');
   const dots        = document.querySelectorAll('.crew-dot');
   const placeholder = document.getElementById('crew-placeholder');
-  const crewTitle   = section.querySelector('.crew-header__title');
-  const crewSub     = section.querySelector('.crew-header__sub');
   const sticky      = section.querySelector('.crew-sticky');
 
-  if (!section || !panels.length) return;
+  if (!panels.length || !sticky) return;
 
   const creatures  = ['walrus', 'beluga', 'whaleshark', 'turtle'];
   const totalPanels = panels.length;
   let currentIndex  = -1;
   let tailHidden    = false;
   let exitWavePlayed = false;
+  let lastCrewCardWaveAt = 0;
+  let crewCardWaveTl = null;
 
   function playCrewCardWave() {
     const wrap    = document.querySelector('.crew-info-wrap');
@@ -371,34 +459,28 @@ function initCrewScroll() {
     const turbEl  = document.getElementById('dive-turbulence');
 
     if (!wrap || !dispMap || !turbEl || typeof gsap === 'undefined') return;
+    const now = performance.now();
+    if (now - lastCrewCardWaveAt < 260) return;
+    lastCrewCardWaveAt = now;
 
     wrap.style.filter = 'url(#dive-warp)';
+    turbEl.setAttribute('baseFrequency', '0.0038 0.0068');
+    dispMap.setAttribute('scale', '0');
 
-    let rafId;
-    const t0 = performance.now();
-    (function tickCrewWave() {
-      const t   = (performance.now() - t0) / 1000;
-      const bfx = (0.005 + Math.sin(t * 2.2) * 0.0015).toFixed(5);
-      const bfy = (0.009 + Math.cos(t * 1.8) * 0.0022).toFixed(5);
-      turbEl.setAttribute('baseFrequency', `${bfx} ${bfy}`);
-      rafId = requestAnimationFrame(tickCrewWave);
-    })();
+    crewCardWaveTl?.kill();
+    crewCardWaveTl = gsap.timeline({
+      defaults: { overwrite: 'auto' },
+      onComplete() {
+        turbEl.setAttribute('baseFrequency', '0.004 0.007');
+        dispMap.setAttribute('scale', '0');
+        wrap.style.filter = '';
+        crewCardWaveTl = null;
+      },
+    });
 
-    gsap.fromTo(
-      dispMap,
-      { attr: { scale: 22 } },
-      {
-        attr: { scale: 0 },
-        duration: 0.85,
-        ease: 'expo.out',
-        onComplete() {
-          cancelAnimationFrame(rafId);
-          turbEl.setAttribute('baseFrequency', '0.004 0.007');
-          dispMap.setAttribute('scale', '0');
-          wrap.style.filter = '';
-        },
-      }
-    );
+    crewCardWaveTl
+      .to(dispMap, { attr: { scale: 34 }, duration: 0.18, ease: 'sine.out' })
+      .to(dispMap, { attr: { scale: 0 }, duration: 0.86, ease: 'power3.out' });
   }
 
   function playCrewExitWave() {
@@ -436,8 +518,8 @@ function initCrewScroll() {
     );
   }
 
-  function setActive(idx) {
-    if (idx === currentIndex) return;
+  function setActive(idx, force = false) {
+    if (idx === currentIndex && !force) return;
     const prevIndex = currentIndex;
     currentIndex = idx;
 
@@ -452,15 +534,16 @@ function initCrewScroll() {
     if (placeholder) placeholder.dataset.creature = creatures[idx] ?? '';
 
     /* Three.js crew3d.js에 전달 */
-    document.dispatchEvent(new CustomEvent('crew-switch', { detail: { idx } }));
+    document.dispatchEvent(new CustomEvent('crew-switch', { detail: { idx, immediate: force } }));
 
-    /* 카드 전환 파동 효과 (첫 번째 진입 제외) */
-    if (prevIndex >= 0) playCrewCardWave();
+    if (force || (prevIndex >= 0 && prevIndex !== idx)) playCrewCardWave();
   }
 
   function onScroll() {
     const rect    = section.getBoundingClientRect();
     const scrolled = -rect.top; /* 섹션 상단으로부터 스크롤된 px */
+    const panelHeight = window.innerHeight;
+    const exitStart = totalPanels * panelHeight;
 
     if (scrolled < -10) {
       if (exitWavePlayed) {
@@ -474,7 +557,7 @@ function initCrewScroll() {
       return;
     }
 
-    const pastLastPanel = scrolled >= totalPanels * window.innerHeight;
+    const pastLastPanel = scrolled >= exitStart;
     if (pastLastPanel) {
       if (!tailHidden) {
         tailHidden = true;
@@ -502,14 +585,25 @@ function initCrewScroll() {
     }
 
     /* 각 패널은 100vh(= innerHeight)씩 차지 */
+    const wasContentVisible = section.classList.contains('is-content-visible');
+    section.classList.add('is-title-visible', 'is-content-visible');
+
     const idx = Math.min(
-      Math.floor(scrolled / window.innerHeight),
+      Math.floor(scrolled / panelHeight),
       totalPanels - 1
     );
-    setActive(Math.max(idx, 0));
+    setActive(Math.max(idx, 0), !wasContentVisible);
   }
 
   window.addEventListener('scroll', onScroll, { passive: true });
+  document.addEventListener('crew-force-enter', () => {
+    section.classList.remove('is-crew-exiting', 'is-crew-wave-exiting');
+    section.classList.add('is-title-visible', 'is-content-visible');
+    tailHidden = false;
+    exitWavePlayed = false;
+    setActive(0, true);
+  });
+  document.addEventListener('crew-card-reenter', playCrewCardWave);
   setActive(0);
 
   /* 점 클릭 → 해당 패널 위치로 스크롤 */
@@ -550,41 +644,55 @@ function initStickySequenceSection(sectionId) {
   const section = document.getElementById(sectionId);
   if (!section) return;
   let contentWasVisible = false;
+  let lastProgress = 0;
 
   function clamp01(value) {
     return Math.min(Math.max(value, 0), 1);
   }
 
+  function smoothstep(edge0, edge1, value) {
+    const t = clamp01((value - edge0) / (edge1 - edge0));
+    return t * t * (3 - 2 * t);
+  }
+
   function onScroll() {
     const rect = section.getBoundingClientRect();
     const vh   = window.innerHeight;
-    const progress = clamp01(-rect.top / vh);
+    const progress = clamp01((vh - rect.top) / vh);
+    const exitProgress = clamp01((vh * 0.18 - rect.bottom) / (vh * 0.18));
     const titleY = (1 - progress) * 46;
     const contentY = (1 - progress) * 52;
     const isInRange = rect.top < vh && rect.bottom > 0;
     const isPast = rect.bottom <= 0;
+    const titleOpacity = smoothstep(0.06, 0.24, progress) * (1 - exitProgress);
+    const contentOpacity = smoothstep(0.22, 0.42, progress) * (1 - exitProgress);
+    const scrollingDown = progress >= lastProgress;
 
     section.style.setProperty('--seq-title-y', `${titleY.toFixed(2)}vh`);
     section.style.setProperty('--seq-content-y', `${contentY.toFixed(2)}vh`);
+    section.style.setProperty('--seq-title-opacity', titleOpacity.toFixed(3));
+    section.style.setProperty('--seq-content-opacity', contentOpacity.toFixed(3));
 
     if (!isInRange && !isPast) {
       section.classList.remove('is-title-visible', 'is-content-visible', 'is-exiting');
       contentWasVisible = false;
+      lastProgress = progress;
       return;
     }
 
-    const titleVisible = progress > 0.02 && !isPast;
-    const contentVisible = progress > 0.18 && !isPast;
-    const exiting = progress >= 0.98 || isPast;
+    const titleVisible = titleOpacity > 0.01 && !isPast;
+    const contentVisible = contentOpacity > 0.01 && !isPast;
+    const exiting = exitProgress > 0 || isPast;
 
     section.classList.toggle('is-title-visible', titleVisible);
     section.classList.toggle('is-content-visible', contentVisible);
-    section.classList.toggle('is-exiting', progress >= 0.98 || isPast);
+    section.classList.toggle('is-exiting', exiting);
 
-    if (contentVisible && !contentWasVisible && !exiting) {
+    if (contentVisible && !contentWasVisible && !exiting && scrollingDown) {
       playSequenceWave(section);
     }
     contentWasVisible = contentVisible && !exiting;
+    lastProgress = progress;
   }
 
   window.addEventListener('scroll', onScroll, { passive: true });
@@ -650,10 +758,38 @@ function initMapMarkers() {
   let indicatorRaf = null;
 
   const branchInfo = {
-    '일산':  { name: '아쿠아플라넷 일산',  img: 'assets/images/Frame 19.png', href: '#sec-booking' },
-    '코엑스': { name: '아쿠아플라넷 코엑스', img: 'assets/images/Frame 20.png', href: '#sec-booking' },
-    '여수':  { name: '아쿠아플라넷 여수',  img: 'assets/images/Frame 22.png', href: '#sec-booking' },
-    '제주':  { name: '아쿠아플라넷 제주',  img: 'assets/images/Frame 21.png', href: '#sec-booking' },
+    '일산':  {
+      name: '아쿠아플라넷 일산',
+      img: 'assets/images/Frame 19.png',
+      href: '#sec-booking',
+      address: '경기도 고양시 일산서구 한류월드로 282',
+      tel: 'TEL. 1833-7001',
+      desc: '해양문화의 가치와 생태계 보존을 대중에게 널리 알리는 아쿠아플라넷 일산.',
+    },
+    '코엑스': {
+      name: '아쿠아플라넷 광교',
+      img: 'assets/images/Frame 20.png',
+      href: '#sec-booking',
+      address: '경기도 수원시 영통구 광교호수공원로 300 포레나 광교 B1F',
+      tel: 'TEL. 1833-7001',
+      desc: '도심 속에서 바다를 보고, 만지고, 느낄 수 있는 경기 남부의 해양문화공간, 아쿠아플라넷 광교.',
+    },
+    '여수':  {
+      name: '아쿠아플라넷 여수',
+      img: 'assets/images/Frame 22.png',
+      href: '#sec-booking',
+      address: '전라남도 여수시 오동도로 61-11',
+      tel: 'TEL. 1833-7001',
+      desc: '인간과 자연이 공생하는 해양문화의 가치를 전하는 남해의 대표 해양문화공간, 아쿠아플라넷 여수.',
+    },
+    '제주':  {
+      name: '아쿠아플라넷 제주',
+      img: 'assets/images/Frame 21.png',
+      href: '#sec-booking',
+      address: '제주특별자치도 서귀포시 성산읍 섭지코지로 95',
+      tel: 'TEL. 1833-7001',
+      desc: '제주의 바다와 해양 생태를 가까이에서 만나는 국내 최대 규모의 아쿠아리움, 아쿠아플라넷 제주.',
+    },
   };
 
   const cardImg = hoverCard?.querySelector('.location-hover-card__img');
@@ -686,9 +822,18 @@ function initMapMarkers() {
     mapWrap?.classList.add('is-hovering');
 
     const info = branchInfo[marker.dataset.branch];
-    if (cardImg && info) {
-      cardImg.src = info.img;
-      cardImg.alt = info.name;
+    if (info) {
+      if (cardImg) {
+        cardImg.src = info.img;
+        cardImg.alt = info.name;
+      }
+      const branchEl = hoverCard?.querySelector('.location-hover-card__branch');
+      const metaPs   = hoverCard?.querySelectorAll('.location-hover-card__meta p');
+      const descEl   = hoverCard?.querySelector('.location-hover-card__desc');
+      if (branchEl) branchEl.textContent = info.name;
+      if (metaPs?.[0]) metaPs[0].textContent = info.address;
+      if (metaPs?.[1]) metaPs[1].textContent = info.tel;
+      if (descEl) descEl.textContent = info.desc;
     }
     window.clearTimeout(indicatorTimer);
     window.cancelAnimationFrame(indicatorRaf);
